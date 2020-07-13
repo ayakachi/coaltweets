@@ -1,2 +1,7 @@
 # coaltweets
-sentiment analysis related to coal policies
+
+Sentiment analyses related to coal.
+
+For the "Adani paper", please save files to /adani/FILENAME.
+
+
