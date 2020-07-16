@@ -1,0 +1,141 @@
+import GetOldTweets3 as got
+import pandas as pd
+import string
+import re
+import csv
+import time
+from PyPDF2 import PdfFileMerger
+import os
+import re
+import csv
+import pandas as pd
+import nltk 
+import sklearn 
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import gensim
+import gensim.corpora as corpora
+from gensim.utils import simple_preprocess
+from gensim.models import CoherenceModel
+#nltk.download('punkt')
+#nltk.download('wordnet')
+from nltk import sent_tokenize, word_tokenize
+from nltk.stem.snowball import SnowballStemmer
+from nltk.stem.wordnet import WordNetLemmatizer
+from nltk.corpus import stopwords
+from nltk.stem.porter import PorterStemmer
+from pylab import *
+from nltk.corpus import stopwords
+from pylab import *
+from sklearn.decomposition import TruncatedSVD
+from sklearn.feature_extraction.text import TfidfTransformer 
+from sklearn.feature_extraction.text import CountVectorizer 
+from sklearn.preprocessing import Normalizer
+from sklearn import metrics
+from sklearn.cluster import KMeans, MiniBatchKMeans
+from sklearn.metrics import pairwise_distances
+from sklearn.manifold import MDS
+from scipy.spatial.distance import cosine
+
+# Scraping Adani Tweets (change the keyword to scrape #StopAdani Tweets)
+
+def get_twitter_info():
+    tweet_df["tweet_text"] = tweet_df["got_criteria"].apply(lambda x: x.text)
+    tweet_df["date"] = tweet_df["got_criteria"].apply(lambda x: x.date)
+    tweet_df["hashtags"] = tweet_df["got_criteria"].apply(lambda x: x.hashtags)
+    tweet_df["link"] = tweet_df["got_criteria"].apply(lambda x: x.permalink)
+
+keyword = "adani AND coal AND -#stopadani AND -filter:retweets AND -filter:replies"
+oldest_date = "2017-03-01"    
+newest_date = "2017-03-31"
+locations = ["Mount Isa", "Carnavron", "Marble Bar", "Halls Creek", "Alice Springs", "Borroloola", "Eucla", "Warburton", "Kalgoorlie", "Warburton", "Coober Pedy", "Wiluna", "Tanbar", "Tilpa", "Augathella", "Kowanyama", "Perth", "Darwin", "Syndey", "Melbourne", "Hobart", "Adelaide", "Canberra", "Cairns", "Mackay", "Brisbane", "Townsville"]
+radius = "100mi"
+number_tweets = 15000         #per location
+
+tweetCriteria_list = []
+for location in locations:
+    tweetCriteria = got.manager.TweetCriteria().setQuerySearch(keyword)\
+                                           .setSince(oldest_date)\
+                                           .setUntil(newest_date)\
+                                            .setNear(location)\
+                                            .setWithin(radius)\
+                                           .setMaxTweets(number_tweets)
+    tweetCriteria_list.append(tweetCriteria)
+    
+tweet_dict = {}
+for criteria, location in zip(tweetCriteria_list, locations):
+    tweets = got.manager.TweetManager.getTweets(criteria)
+    tweet_dict[location] = tweets
+    time.sleep(10)
+
+tweet_df = pd.DataFrame(dict([ (k,pd.Series(v)) for k,v in tweet_dict.items() ]))
+tweet_df['tweet_count'] = tweet_df.index
+tweet_df = pd.melt(tweet_df, id_vars=["tweet_count"], var_name='City', value_name='got_criteria')
+tweet_df = tweet_df.dropna()
+
+
+get_twitter_info()
+tweet_df = tweet_df.drop("got_criteria", 1)
+tweet_df.head()
+tweet_df["clean"] = tweet_df["tweet_text"].str.replace(r'https',' ')
+tweet_df.drop_duplicates(subset="clean", keep="first", inplace=True)
+tweet_df['clean'].to_csv("adanitweetsmarch2017.csv", header=True)
+
+# Latent Semantic Analysis and MDS (semantic maps). We have randomly selected 10% of the tweets. 
+# News articles from Courier-Mail were manually downloaded and added to Adani Tweets and StopAdani Tweets.
+# Tweets and news articles were cleaned and duplicates were dropped.
+# To plot the semantic map see the do file in the same folder.
+
+with open('finalwave1.csv','r', encoding='latin-1') as f:
+    your_list = pd.read_csv(f)
+stop=["adani", "stopadani", "coal"]
+p_stemmer = PorterStemmer()
+stop_words = set(stopwords.words("english")) 
+def fix_Text(text):
+    letters_only = re.sub("[^a-zA-Z]"," ", str(text)) 
+    words=letters_only.lower().split()
+    meaningful=[w for w in words if not w in stop_words]
+    meaningful2=[w for w in meaningful if not w in stop]
+    stemmed_tokens = [p_stemmer.stem(w) for w in meaningful2]
+    return(" ".join(stemmed_tokens))
+num_resp=your_list["clean"].size
+clean_text = []
+for i in range(0,num_resp):
+    clean_text.append(fix_Text(your_list["clean"][i]))
+vectorizer = CountVectorizer(min_df=1) 
+dtm = vectorizer.fit_transform(clean_text)
+tfidf_transformer = TfidfTransformer()
+tfidf_dtm = tfidf_transformer.fit_transform(dtm)
+lsa = TruncatedSVD(200, algorithm='randomized')
+dtm_lsa = lsa.fit_transform(tfidf_dtm)
+dtm_lsa = Normalizer(copy=False).fit_transform(dtm_lsa)
+dist_out = 1-pairwise_distances(dtm_lsa, metric="cosine")
+model = MDS(n_components=2, random_state=2)
+out = model.fit_transform(dist_out)
+df = pd.DataFrame(out)
+df.to_csv("semanticmap.csv")
+
+# Semantic Similarity of Tweets per month. For each month we computed the similarity of the two groups of Tweets:
+
+with open('adanitweetsmarch2017.csv','r', encoding='latin-1') as f:
+        your_list = pd.read_csv(f)
+        size=len(your_list["clean"])
+with open('alltweets2017.csv','r', encoding='latin-1') as f:
+        your_list = pd.read_csv(f)
+        num_resp=your_list["clean"].size
+        clean_text = []
+        for i in range(0,num_resp):
+            clean_text.append(fix_Text(your_list["clean"][i]))
+        vectorizer = CountVectorizer(min_df=1) 
+        dtm = vectorizer.fit_transform(clean_text)
+        tfidf_transformer = TfidfTransformer()
+        tfidf_dtm = tfidf_transformer.fit_transform(dtm)
+        lsa = TruncatedSVD(50, algorithm='randomized')
+        dtm_lsa = lsa.fit_transform(tfidf_dtm)
+        dtm_lsa = Normalizer(copy=False).fit_transform(dtm_lsa)
+        dist_out = 1-pairwise_distances(dtm_lsa, metric="cosine")
+        df = pd.DataFrame(dist_out)
+        a=df.iloc[size:,size:]
+        b=np.mean(a, axis=1)
+        similarity=mean(b)
